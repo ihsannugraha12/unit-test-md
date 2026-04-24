@@ -1,0 +1,501 @@
+# 🚀 Unit Test Quick Reference Card
+
+## Struktur Dasar (Boilerplate)
+
+```php
+<?php
+declare(strict_types=1);
+
+namespace Tests\Unit\Usecases;
+
+use PHPUnit\Framework\TestCase;
+use Mockery;
+
+/**
+ * @coversDefaultClass \App\Usecases\MyUsecase
+ */
+class MyUsecaseTest extends TestCase
+{
+    private $dep1;
+    private $dep2;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->dep1 = Mockery::mock(Dependency1::class);
+        $this->dep2 = Mockery::mock(Dependency2::class);
+    }
+
+    protected function tearDown(): void
+    {
+        \Mockery::close();
+        parent::tearDown();
+    }
+
+    protected function makeService()
+    {
+        return Mockery::mock(MyUsecase::class, [
+            $this->dep1,
+            $this->dep2,
+        ])->makePartial();
+    }
+}
+```
+
+---
+
+## Mockery Cheat Sheet
+
+### Setup Mock Expectations
+
+| Pattern | Usage |
+|---------|-------|
+| `.once()` | Called exactly 1x |
+| `.twice()` | Called exactly 2x |
+| `.times(n)` | Called exactly n times |
+| `.atLeast()->once()` | Called at least 1x |
+| `.never()` | Should not be called |
+
+### Return Values
+
+```php
+// Single return value
+->andReturn($value)
+
+// Multiple sequential returns
+->andReturn($value1)->andReturn($value2)
+
+// Throw exception
+->andThrow(new Exception("Error"))
+
+// Callback for complex logic
+->andReturnUsing(fn($arg) => process($arg))
+```
+
+### Argument Matching
+
+```php
+// Exact match
+->with("exact_value")
+
+// Type checking
+->with(Mockery::type('string'), Mockery::type('array'))
+
+// Callback validation
+->with(Mockery::on(fn($arg) => $arg['key'] === 'value'))
+
+// Any argument
+->with(Mockery::any())
+
+// Ignore additional arguments
+->withArgs([$arg1, $arg2])
+```
+
+### Full Mock Expression
+
+```php
+$this->service->shouldReceive('method')
+    ->once()
+    ->with("ARG1", Mockery::type('array'))
+    ->andReturn($value);
+```
+
+---
+
+## Assertion Cheat Sheet
+
+### Boolean & Null
+
+```php
+$this->assertTrue($result);
+$this->assertFalse($result);
+$this->assertNull($result);
+$this->assertNotNull($result);
+```
+
+### Type Checking
+
+```php
+$this->assertIsArray($result);
+$this->assertIsString($result);
+$this->assertIsInt($result);
+$this->assertIsFloat($result);
+$this->assertIsObject($result);
+$this->assertIsCallable($result);
+```
+
+### Value Comparison
+
+```php
+$this->assertEquals($expected, $actual);           // ==
+$this->assertNotEquals($expected, $actual);
+$this->assertSame($expected, $actual);             // ===
+$this->assertNotSame($expected, $actual);
+
+$this->assertGreaterThan($threshold, $value);
+$this->assertLessThan($threshold, $value);
+$this->assertGreaterThanOrEqual($threshold, $value);
+$this->assertLessThanOrEqual($threshold, $value);
+```
+
+### Collections
+
+```php
+$this->assertCount($expected, $array);
+$this->assertEmpty($array);
+$this->assertNotEmpty($array);
+$this->assertContains('value', $array);
+$this->assertNotContains('value', $array);
+$this->assertArrayHasKey('key', $array);
+$this->assertArrayNotHasKey('key', $array);
+```
+
+### Strings
+
+```php
+$this->assertStringContains('substr', $string);
+$this->assertStringNotContains('substr', $string);
+$this->assertStringStartsWith('prefix', $string);
+$this->assertStringEndsWith('suffix', $string);
+```
+
+### Exception Testing (in ARRANGE)
+
+```php
+$this->expectException(MyException::class);
+$this->expectExceptionMessage('Expected message');
+$this->expectExceptionCode(123);
+```
+
+---
+
+## Test Method Template (AAA Pattern)
+
+```php
+/**
+ * @covers ::methodName
+ * @covers ::helperMethod
+ */
+public function testMethodNameScenarioExpectedResult()
+{
+    // ========== ARRANGE ==========
+    // Setup test data & mock expectations
+    $testData = new Model(['key' => 'value']);
+    
+    $this->dependency->shouldReceive('method')
+        ->once()
+        ->with('expected_arg')
+        ->andReturn($testData);
+    
+    $this->otherDep->shouldReceive('action')
+        ->andThrow(new Exception('Error'));
+    
+    // ========== ACT ==========
+    // Execute the method being tested
+    $service = $this->makeService();
+    $result = $service->doSomething('param1', 'param2');
+    
+    // ========== ASSERT ==========
+    // Verify the results
+    $this->assertTrue($result);
+    $this->assertIsArray($result);
+    $this->assertCount(1, $result);
+}
+```
+
+---
+
+## Common Patterns
+
+### Testing Exception
+
+```php
+public function testThrowsExceptionWhenInvalid()
+{
+    $this->expectException(InvalidArgumentException::class);
+    $this->expectExceptionMessage('Invalid input');
+    
+    $this->repo->shouldReceive('find')->andReturn(null);
+    
+    $service = $this->makeService();
+    $service->process('invalid_id');
+}
+```
+
+### Testing Success Case
+
+```php
+public function testProcessReturnsSuccess()
+{
+    $expectedData = ['id' => 1, 'name' => 'Test'];
+    
+    $this->repo->shouldReceive('find')
+        ->once()
+        ->with(1)
+        ->andReturn($expectedData);
+    
+    $service = $this->makeService();
+    $result = $service->process(1);
+    
+    $this->assertTrue($result);
+    $this->assertEquals($expectedData, $result);
+}
+```
+
+### Testing with Multiple Scenarios (Data Provider)
+
+```php
+/**
+ * @dataProvider processProvider
+ */
+public function testProcessWithVariousInputs($scenario, $input, $expected)
+{
+    if ($scenario === 'error') {
+        $this->expectException(Exception::class);
+        $this->repo->shouldReceive('find')->andReturn(null);
+    } else {
+        $this->repo->shouldReceive('find')->andReturn($expected);
+    }
+    
+    $service = $this->makeService();
+    $result = $service->process($input);
+    
+    if ($scenario !== 'error') {
+        $this->assertEquals($expected, $result);
+    }
+}
+
+public function processProvider()
+{
+    return [
+        ['success', 1, ['id' => 1]],
+        ['success', 2, ['id' => 2]],
+        ['error', 0, null],
+    ];
+}
+```
+
+### Testing with Database Transaction
+
+```php
+public function testTransactionCommitOnSuccess()
+{
+    DB::shouldReceive('beginTransaction')->once();
+    DB::shouldReceive('commit')->once();
+    DB::shouldReceive('rollback')->never();
+    
+    $this->repo->shouldReceive('create')->once();
+    
+    $service = $this->makeService();
+    $result = $service->create($data);
+    
+    $this->assertTrue($result);
+}
+
+public function testTransactionRollbackOnError()
+{
+    DB::shouldReceive('beginTransaction')->once();
+    DB::shouldReceive('rollback')->once();
+    DB::shouldReceive('commit')->never();
+    
+    $this->repo->shouldReceive('create')
+        ->andThrow(new Exception('DB Error'));
+    
+    $this->expectException(Exception::class);
+    
+    $service = $this->makeService();
+    $service->create($data);
+}
+```
+
+### Testing Protected Methods
+
+```php
+public function testProtectedMethodBehavior()
+{
+    $service = $this->makeService();
+    $service->shouldAllowMockingProtectedMethods();
+    
+    $service->shouldReceive('protectedMethod')
+        ->once()
+        ->andReturn($value);
+    
+    $result = $service->publicMethod();
+    $this->assertEquals($value, $result);
+}
+```
+
+---
+
+## Naming Conventions
+
+### File & Class
+```php
+// File: tests/Usecases/KreditPembiayaanPerumahanUsecaseTest.php
+// Class: KreditPembiayaanPerumahanUsecaseTest
+
+// Pattern: [TargetClass]Test
+```
+
+### Test Methods
+```php
+// Pattern: test[Method][Scenario]
+
+testDoSendAkadAgunanSuccess()
+testDoSendAkadAgunanThrowExceptionWhenPrakarsaNotFound()
+testDoSendAkadAgunanAgunanNotFound()
+testGetDetailPrakarsaKPPHistoryForProduct68ReturnsExpectedStructure()
+```
+
+### Helper Methods
+```php
+// Pattern: get[DataName]
+
+protected function getPrakarsa(): object
+protected function getValidAgunan(): array
+protected function getMinimalRequest(): array
+```
+
+---
+
+## Test Data Helpers
+
+```php
+protected function getMinimalPrakarsa(): object
+{
+    return (object) [
+        'refno' => 'REF001',
+        'id_kredit' => '123',
+    ];
+}
+
+protected function getFullPrakarsa(): array
+{
+    return array_merge((array) $this->getMinimalPrakarsa(), [
+        'content_datapribadi' => json_encode(['name' => 'Test']),
+        'content_dataagunan' => json_encode(['agunan' => 'data']),
+        'status' => 105,
+    ]);
+}
+
+// Usage in test
+public function testSomething()
+{
+    $prakarsa = $this->getFullPrakarsa();
+    // ...
+}
+```
+
+---
+
+## Common Commands
+
+```bash
+# Run all tests
+./vendor/bin/phpunit
+
+# Run specific test file
+./vendor/bin/phpunit tests/Usecases/MyUsecaseTest.php
+
+# Run specific test method
+./vendor/bin/phpunit --filter testMethodName tests/Usecases/MyUsecaseTest.php
+
+# Run with code coverage
+./vendor/bin/phpunit --coverage-html coverage-report
+
+# Run with verbosity
+./vendor/bin/phpunit -v
+
+# Show test names
+./vendor/bin/phpunit --testdox
+
+# Stop on first failure
+./vendor/bin/phpunit --stop-on-failure
+
+# Run with configuration
+./vendor/bin/phpunit -c phpunit.xml
+```
+
+---
+
+## Anti-Patterns ❌
+
+```php
+// ❌ DON'T: Hardcoded numbers without explanation
+if ($count > 5) { }
+
+// ✅ DO: Use named constants
+const MINIMUM_RECORDS = 5;
+if ($count >= self::MINIMUM_RECORDS) { }
+
+// ❌ DON'T: Test interdependencies
+public function testA() { /* sets up data for testB */ }
+public function testB() { /* depends on testA */ }
+
+// ✅ DO: Each test is independent
+// Both setUp() and helper methods handle setup
+
+// ❌ DON'T: Call real services
+$result = new RealDatabaseService()->fetch();
+
+// ✅ DO: Mock external dependencies
+$this->db->shouldReceive('fetch')->andReturn($data);
+
+// ❌ DON'T: Test implementation details
+$this->assertEquals($object->privateVar, 'value');
+
+// ✅ DO: Test behavior/output
+$this->assertEquals($expectedResult, $method());
+
+// ❌ DON'T: Multiple assertions testing different things
+public function testMultipleThings() {
+    $this->assertTrue($a);
+    $this->assertFalse($b);
+    $this->assertEquals($c, $d);
+}
+
+// ✅ DO: One assertion per logical thing (or related group)
+public function testReturnsTrue() { $this->assertTrue($result); }
+public function testSetsValueCorrectly() { $this->assertEquals($expected, $result); }
+```
+
+---
+
+## Debugging Tips
+
+```php
+// Print debug info (careful in tests!)
+var_dump($variable);
+echo json_encode($data, JSON_PRETTY_PRINT);
+
+// Mock a method but let other calls through
+$this->service->makePartial()
+    ->shouldReceive('method')
+    ->andReturn($value);
+
+// Verify mock was called
+// (Mockery throws error if expectations not met automatically)
+
+// Check what was called
+$this->repo->shouldHaveReceived('method')->times(2);
+
+// Spy on actual calls
+Mockery::spy(ServiceClass::class);
+```
+
+---
+
+## Remember
+
+1. ✅ **Test ONE thing per test method**
+2. ✅ **Use AAA Pattern** (Arrange, Act, Assert)
+3. ✅ **Setup mocks with explicit expectations** (once, twice, etc.)
+4. ✅ **Use descriptive test names**
+5. ✅ **Mock external dependencies**
+6. ✅ **Run tests frequently** during development
+7. ✅ **Keep tests maintainable** - refactor test code like production code
+8. ✅ **Test edge cases** - success, failures, exceptions, boundary conditions
+
+---
+
+**Last Updated**: 2026-04-24
