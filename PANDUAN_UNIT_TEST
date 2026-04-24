@@ -1,0 +1,763 @@
+# 📋 Panduan Membuat Unit Test di Brispot Microservice Prakarsa
+
+Panduan ini disusun berdasarkan best practices dari file `KreditPembiayaanPerumahanUsecaseTest.php` dan dimaksudkan sebagai referensi untuk membuat unit test baru yang konsisten dengan standar proyek.
+
+---
+
+## 1. 📁 Struktur File & Naming Convention
+
+### Lokasi File Test
+- **Path**: `/tests/{Kategori}/{NamaClass}Test.php`
+- **Contoh**: `/tests/Usecases/KreditPembiayaanPerumahanUsecaseTest.php`
+- **Struktur folder** harus mencerminkan struktur aplikasi (`/app`)
+
+### Naming Convention
+```php
+// Format: [TargetClass]Test
+class KreditPembiayaanPerumahanUsecaseTest extends TestCase
+```
+
+---
+
+## 2. 🏗️ Struktur Dasar Class
+
+### Header & Dokumentasi
+```php
+<?php
+
+/**
+ * PHP version 8.0.30
+ *
+ * @category Application
+ * @package  Tests\Unit\Usecases
+ * @author   Nama <email@bri.co.id>
+ * @license  https://mit-license.org/ MIT License
+ * @version  GIT: 0.0.1
+ * @link     https://github.com/
+ */
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Usecases;
+
+// Import dependencies
+use PHPUnit\Framework\TestCase;
+use Mockery;
+
+/**
+ * @coversDefaultClass \App\Usecases\KreditPembiayaanPerumahanUsecase
+ */
+class KreditPembiayaanPerumahanUsecaseTest extends TestCase
+{
+    // Class body
+}
+```
+
+---
+
+## 3. 🔧 Setup & Dependencies
+
+### Private Properties (Mock Objects)
+Deklarasikan semua dependencies sebagai private properties:
+
+```php
+private $prakarsarepo;
+private $prakarsamediumrepo;
+private $masterservice;
+private $eksternalservice;
+private $officeservice;
+private $coreLasService;
+private $masterasuransirepo;
+private $kreditInvestasiPadatKaryaUsecase;
+private $kreditUsahaAlsintanUsecase;
+private $prakarsaHistoryRepo;
+```
+
+### Method `setUp()`
+Dijalankan sebelum setiap test method:
+
+```php
+protected function setUp(): void
+{
+    parent::setUp();
+
+    // Mock semua dependencies
+    $this->prakarsarepo = Mockery::mock(PrakarsaRepository::class);
+    $this->prakarsamediumrepo = Mockery::mock(PrakarsaMediumRepository::class);
+    $this->masterservice = Mockery::mock(MasterService::class);
+    $this->eksternalservice = Mockery::mock(EksternalService::class);
+    // ... dan seterusnya
+}
+```
+
+### Method `tearDown()`
+Cleanup setelah setiap test method:
+
+```php
+protected function tearDown(): void
+{
+    \Mockery::close();
+    parent::tearDown();
+}
+```
+
+### Helper Method `makeService()`
+Membuat service instance dengan dependencies ter-mock:
+
+```php
+protected function makeService()
+{
+    return Mockery::mock(KreditPembiayaanPerumahanUsecase::class, [
+        $this->prakarsarepo,
+        $this->prakarsamediumrepo,
+        $this->masterservice,
+        $this->eksternalservice,
+        // ... dependencies lainnya
+    ])->makePartial();
+}
+```
+
+**Penjelasan**:
+- `.makePartial()` = method nyata tetap berjalan, hanya dependencies yang di-mock
+- Gunakan `.makePartial()` untuk test method behavior dengan mock dependencies
+
+---
+
+## 4. 🧪 Penulisan Test Method
+
+### Naming Convention
+Format: `test{MethodName}{Scenario}`
+
+```php
+// ✅ BAIK
+testDoSendAkadAgunanThrowExceptionWhenPrakarsaNotFound()
+testDoSendAkadAgunanAgunanNotFound()
+testDoSendAkadAgunanFailSendSIKP()
+testGetDetailPrakarsaKPPHistoryForProduct68ReturnsExpectedStructure()
+
+// ❌ HINDARI
+testSomething()
+test1()
+testMethod()
+```
+
+### Struktur Test Method (AAA Pattern)
+```php
+public function testDoSendAkadAgunanThrowExceptionWhenPrakarsaNotFound()
+{
+    // ARRANGE: Setup data & expectations
+    $this->expectException(DataNotFoundException::class);
+    
+    $prakarsa = Mockery::mock(Prakarsa::class);
+    $prakarsa->shouldReceive('toArray')->andReturn([]);
+    
+    $this->prakarsarepo->shouldReceive('getPrakarsa')
+        ->once()
+        ->andReturn($prakarsa);
+    
+    // ACT: Jalankan method yang di-test
+    $service = $this->makeService();
+    $service->doSendAkadAgunan("REF001", "123456");
+    
+    // ASSERT: Verify results
+    // (assertions implisit dari Mockery expectations)
+}
+```
+
+### Annotations untuk Coverage
+Gunakan `@covers` untuk mendokumentasikan methods yang di-test:
+
+```php
+/**
+ * @covers ::__construct
+ * @covers ::doSendAkadAgunan
+ * @covers ::createAkadDanAgunanRequest
+ * @covers ::cekKirimSIKPPrakarsaKPP
+ * @covers ::getMasterJenisAgunan
+ */
+public function testDoSendAkadAgunanWithPrakarsaHistory()
+{
+    // ...
+}
+```
+
+---
+
+## 5. 🎯 Mocking dengan Mockery
+
+### Basic Mock Expectations
+
+#### `shouldReceive()` - Basic Setup
+```php
+$this->prakarsarepo->shouldReceive('getPrakarsa')
+    ->once()  // Dipanggil tepat 1x
+    ->andReturn($prakarsaMock);
+```
+
+#### Call Count Modifiers
+```php
+->once()              // Dipanggil tepat 1x
+->twice()             // Dipanggil tepat 2x
+->atLeast()->once()   // Dipanggil minimal 1x
+->times(2)            // Dipanggil tepat 2x
+->never()             // Tidak boleh dipanggil
+```
+
+#### Argument Matching
+```php
+// Exact argument
+->shouldReceive('getPrakarsa')
+    ->with("REF001", "123456")
+    ->andReturn($prakarsa);
+
+// Type checking
+->shouldReceive('setProfilUsaha')
+    ->with(Mockery::type('object'), Mockery::type('string'))
+    ->andReturn($request);
+
+// Closure/Callback matching
+->shouldReceive('getPrakarsaHistory')
+    ->with(Mockery::on(fn($filter) => $filter['norek'] === '123456'), Mockery::type('array'))
+    ->andReturn([$prakarsa]);
+```
+
+#### Exception Handling
+```php
+// Throw exception
+$this->eksternalservice->shouldReceive('kirimAkadSIKP')
+    ->once()
+    ->andThrow(new ThirdPartyServiceException("SIKP error"));
+
+// Test expectation
+$this->expectException(ThirdPartyServiceException::class);
+```
+
+#### Multiple Return Values
+```php
+$this->service->shouldReceive('method')
+    ->andReturn($value1)
+    ->andReturn($value2)
+    ->andReturn($value3);
+```
+
+### Protected Method Mocking
+Jika perlu mock protected methods:
+
+```php
+$service = $this->makeService();
+$service->shouldAllowMockingProtectedMethods();
+
+$service->shouldReceive('getPrakarsaHistory')
+    ->once()
+    ->andReturn([$prakarsa]);
+```
+
+---
+
+## 6. 📊 Test Scenarios & Patterns
+
+### A. Test Exception Cases
+```php
+public function testDoSendAkadAgunanThrowExceptionWhenPrakarsaNotFound()
+{
+    $this->expectException(DataNotFoundException::class);
+    $this->expectExceptionMessage('Data tidak ditemukan');
+    
+    // Setup mock untuk throw exception
+    $this->prakarsarepo->shouldReceive('getPrakarsa')
+        ->andReturn(null);
+    
+    // Act
+    $service = $this->makeService();
+    $service->doSendAkadAgunan("REF001", "123456");
+}
+```
+
+### B. Test Success Cases
+```php
+public function testDoSendAkadAgunanSuccess()
+{
+    // Setup mocks dengan return values
+    $this->prakarsarepo->shouldReceive('getPrakarsa')
+        ->once()
+        ->andReturn($prakarsa);
+    
+    $this->eksternalservice->shouldReceive('kirimAkadSIKP')
+        ->once();
+    
+    // Act
+    $service = $this->makeService();
+    $result = $service->doSendAkadAgunan("REF001", "123456");
+    
+    // Assert
+    $this->assertTrue($result);
+}
+```
+
+### C. Test Multiple Scenarios dengan Data Provider
+```php
+/**
+ * @dataProvider sendAkadAgunanHistoryProvider
+ */
+public function testDoSendAkadAgunanWithPrakarsaHistory(string $scenario, bool $prakarsaHistory)
+{
+    switch ($scenario) {
+        case 'error_akad':
+            // Test untuk error AKAD
+            $this->eksternalservice->shouldReceive('kirimAkadSIKP')
+                ->andThrow(new Exception("Error"));
+            break;
+            
+        case 'success':
+            // Test untuk success
+            $this->eksternalservice->shouldReceive('kirimAkadSIKP')
+                ->andReturn(true);
+            break;
+    }
+    
+    $service = $this->makeService();
+    // ... assertions
+}
+
+public function sendAkadAgunanHistoryProvider()
+{
+    return [
+        ['error_akad', true],
+        ['error_tlast', true],
+        ['success_history', true],
+        ['success', false],
+    ];
+}
+```
+
+### D. Test Database Transaction
+```php
+public function testWithDatabaseTransaction()
+{
+    // Setup transaction expectations
+    DB::shouldReceive('beginTransaction')->once();
+    DB::shouldReceive('commit')->once();
+    DB::shouldReceive('rollback')->never();
+    
+    // Act & Assert
+    $result = $service->doSendAkadAgunan($refno, $rekening);
+    $this->assertTrue($result);
+}
+
+// Test error dengan rollback
+public function testTransactionRollbackOnError()
+{
+    DB::shouldReceive('beginTransaction')->once();
+    DB::shouldReceive('rollback')->once();
+    DB::shouldReceive('commit')->never();
+    
+    $this->eksternalservice->shouldReceive('kirimAkadSIKP')
+        ->andThrow(new Exception("Error"));
+    
+    $this->expectException(Exception::class);
+    $service->doSendAkadAgunan($refno, $rekening);
+}
+```
+
+---
+
+## 7. 🔍 Assertions & Verifications
+
+### Basic Assertions
+```php
+$this->assertTrue($result);              // Assert true
+$this->assertFalse($result);            // Assert false
+$this->assertNull($result);             // Assert null
+$this->assertIsArray($result);          // Assert array
+$this->assertIsString($result);         // Assert string
+$this->assertIsInt($result);            // Assert integer
+$this->assertIsObject($result);         // Assert object
+```
+
+### Value Assertions
+```php
+$this->assertEquals($expected, $actual);           // Assert equal
+$this->assertNotEquals($expected, $actual);        // Assert not equal
+$this->assertSame($expected, $actual);             // Assert identical (strict)
+$this->assertNotSame($expected, $actual);          // Assert not identical
+
+$this->assertGreaterThan(5, 10);                   // Assert greater than
+$this->assertLessThan(15, 10);                     // Assert less than
+$this->assertGreaterThanOrEqual(10, 10);           // Assert >= 
+```
+
+### Collection Assertions
+```php
+$this->assertCount(3, $array);                     // Assert count
+$this->assertEmpty($array);                        // Assert empty
+$this->assertNotEmpty($array);                     // Assert not empty
+$this->assertContains('value', $array);            // Assert contains
+$this->assertNotContains('value', $array);         // Assert not contains
+```
+
+### String Assertions
+```php
+$this->assertStringContains('substring', $string);
+$this->assertStringNotContains('substring', $string);
+$this->assertStringStartsWith('prefix', $string);
+$this->assertStringEndsWith('suffix', $string);
+```
+
+### Exception Assertions (done in ARRANGE phase)
+```php
+$this->expectException(ExceptionClass::class);
+$this->expectExceptionMessage('Expected message');
+$this->expectExceptionCode(100);
+```
+
+---
+
+## 8. 📦 Test Data & Helper Methods
+
+### Membuat Test Data Helpers
+```php
+protected function getPrakarsa(): object
+{
+    $refno = "REF001";
+    $rekening = "123456";
+    
+    $prakarsa = (object) [
+        'refno' => $refno,
+        'id_kredit' => '121739665',
+        'norek_pinjaman' => $rekening,
+        'status' => 105,
+        'tp_produk' => "68",
+        'kategori_nasabah' => '0',
+        'content_datapribadi' => json_encode([/* data pribadi */]),
+        'content_datapengajuan' => json_encode([/* data pengajuan */]),
+        'content_dataagunan' => json_encode([/* data agunan */]),
+        'content_datarekomendasi' => json_encode([/* data rekomendasi */])
+    ];
+    
+    return $prakarsa;
+}
+
+// Penggunaan dalam test
+public function testSomething()
+{
+    $prakarsa = $this->getPrakarsa();
+    
+    $this->prakarsarepo->shouldReceive('getPrakarsa')
+        ->andReturn(new Prakarsa((array) $prakarsa));
+}
+```
+
+### Tips untuk Complex Test Data
+- Gunakan separate methods untuk setup data yang kompleks
+- Leverage JSON structure untuk data nested
+- Gunakan factory pattern atau builder pattern untuk generate data
+- Pisahkan test data dari test logic
+
+```php
+protected function getMinimalPrakarsa(): object
+{
+    return (object) [
+        'refno' => 'REF001',
+        'id_kredit' => '123',
+        'norek_pinjaman' => '456'
+    ];
+}
+
+protected function getFullPrakarsa(): object
+{
+    return array_merge((array) $this->getMinimalPrakarsa(), [
+        'content_datapribadi' => $this->getDataPribadiJson(),
+        'content_dataagunan' => $this->getDataAgunanJson(),
+    ]);
+}
+```
+
+---
+
+## 9. 🚀 Best Practices & Patterns
+
+### ✅ DO's
+
+1. **Test satu thing per method**
+   ```php
+   // BAIK: Test satu scenario
+   public function testThrowExceptionWhenNotFound() { }
+   
+   // HINDARI: Test multiple scenarios dalam satu method
+   public function testMethod() { }
+   ```
+
+2. **Gunakan descriptive names**
+   ```php
+   // BAIK
+   testDoSendAkadAgunanThrowExceptionWhenPrakarsaNotFound()
+   
+   // KURANG BAIK
+   testSend()
+   ```
+
+3. **Setup mocks dengan explicit expectations**
+   ```php
+   // BAIK: Explicit call count
+   $this->service->shouldReceive('method')
+       ->once()  // Clear expectation
+       ->andReturn($value);
+   
+   // KURANG BAIK: No call count
+   $this->service->shouldReceive('method')
+       ->andReturn($value);
+   ```
+
+4. **Use @covers annotations**
+   ```php
+   /**
+    * @covers ::methodName1
+    * @covers ::methodName2
+    */
+   public function testSomething() { }
+   ```
+
+5. **Test behavior, tidak implementation**
+   ```php
+   // BAIK: Test what method returns
+   $this->assertTrue($result);
+   
+   // KURANG BAIK: Test internal details
+   $this->assertEquals('internal_var', $result);
+   ```
+
+### ❌ DON'Ts
+
+1. **Hindari test interdependencies**
+   ```php
+   // TIDAK BOLEH: Satu test bergantung pada hasil test lain
+   // Setiap test harus independent dan bisa run dalam urutan apapun
+   ```
+
+2. **Hindari static/global state**
+   ```php
+   // TIDAK BOLEH
+   public static $counter = 0;
+   
+   // BAIK: Gunakan instance variables dengan setUp/tearDown
+   ```
+
+3. **Hindari real service calls**
+   ```php
+   // TIDAK BOLEH: Calling real service
+   $result = new RealService()->doSomething();
+   
+   // BAIK: Mock external services
+   $this->externalService->shouldReceive('doSomething')
+       ->andReturn($result);
+   ```
+
+4. **Hindari test output**
+   ```php
+   // TIDAK BOLEH
+   public function testSomething() {
+       echo "Testing...";
+   }
+   
+   // BAIK: Silent tests
+   ```
+
+5. **Hindari hardcoded values tanpa keterangan**
+   ```php
+   // KURANG BAIK
+   if ($count > 5) { }
+   
+   // BAIK: Use named constants
+   const MINIMUM_REQUIREMENT = 5;
+   if ($count > self::MINIMUM_REQUIREMENT) { }
+   ```
+
+---
+
+## 10. 🔄 Test Lifecycle
+
+```php
+class MyUsecaseTest extends TestCase
+{
+    // 1. SETUP: Called before each test
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // Initialize mocks
+        $this->repo = Mockery::mock(Repository::class);
+    }
+    
+    // 2. TEST: Run test logic
+    public function testSomething()
+    {
+        // ARRANGE
+        $this->repo->shouldReceive('find')->andReturn($data);
+        
+        // ACT
+        $result = $this->service->process();
+        
+        // ASSERT
+        $this->assertTrue($result);
+    }
+    
+    // 3. TEARDOWN: Called after each test
+    protected function tearDown(): void
+    {
+        \Mockery::close();
+        parent::tearDown();
+    }
+}
+
+// Execution order:
+// 1. setUp()
+// 2. testSomething()
+// 3. tearDown()
+// (repeat for each test method)
+```
+
+---
+
+## 11. 📋 Checklist Membuat Test Baru
+
+- [ ] Buat file dengan naming: `[TargetClass]Test.php`
+- [ ] Extend `TestCase` dari PHPUnit
+- [ ] Tambahkan `@coversDefaultClass` annotation
+- [ ] Deklarasikan private properties untuk mocks
+- [ ] Implement `setUp()` method dengan Mockery initialization
+- [ ] Implement `tearDown()` method dengan Mockery cleanup
+- [ ] Buat `makeService()` helper method
+- [ ] Tulis test methods dengan naming `test[Method][Scenario]`
+- [ ] Gunakan @covers annotations untuk setiap test method
+- [ ] Setup ARRANGE expectations dengan shouldReceive()
+- [ ] ACT: Call method yang di-test
+- [ ] ASSERT: Verify behavior atau results
+- [ ] Tambahkan test data helpers (getPrakarsa(), etc.)
+- [ ] Gunakan @dataProvider untuk parameterized tests
+- [ ] Test exception cases, success cases, dan edge cases
+- [ ] Run tests: `./vendor/bin/phpunit tests/Usecases/[TestClass]`
+- [ ] Verify code coverage: `./vendor/bin/phpunit --coverage-html coverage-report`
+
+---
+
+## 12. 🛠️ Command Referensi
+
+```bash
+# Run specific test file
+./vendor/bin/phpunit tests/Usecases/KreditPembiayaanPerumahanUsecaseTest.php
+
+# Run specific test method
+./vendor/bin/phpunit --filter testDoSendAkadAgunanSuccess tests/Usecases/KreditPembiayaanPerumahanUsecaseTest.php
+
+# Run with coverage
+./vendor/bin/phpunit --coverage-html coverage-report tests/
+
+# Run all tests
+./vendor/bin/phpunit
+
+# Run with verbosity
+./vendor/bin/phpunit -v tests/
+
+# Run and show only failed tests
+./vendor/bin/phpunit --testdox tests/
+```
+
+---
+
+## 13. 📚 Contoh Template Lengkap
+
+```php
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Unit\Usecases;
+
+use App\Models\Prakarsa;
+use App\Repositories\PrakarsaRepository;
+use App\Services\ExternalService;
+use App\Usecases\MyUsecase;
+use Exception;
+use Mockery;
+use PHPUnit\Framework\TestCase;
+use Spotlibs\PhpLib\Exceptions\DataNotFoundException;
+
+/**
+ * @coversDefaultClass \App\Usecases\MyUsecase
+ */
+class MyUsecaseTest extends TestCase
+{
+    private $prakarsaRepo;
+    private $externalService;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->prakarsaRepo = Mockery::mock(PrakarsaRepository::class);
+        $this->externalService = Mockery::mock(ExternalService::class);
+    }
+
+    protected function tearDown(): void
+    {
+        \Mockery::close();
+        parent::tearDown();
+    }
+
+    protected function makeService()
+    {
+        return Mockery::mock(MyUsecase::class, [
+            $this->prakarsaRepo,
+            $this->externalService,
+        ])->makePartial();
+    }
+
+    /**
+     * @covers ::doSomething
+     */
+    public function testDoSomethingReturnsTrue()
+    {
+        // ARRANGE
+        $prakarsa = new Prakarsa(['refno' => 'REF001']);
+        
+        $this->prakarsaRepo->shouldReceive('getPrakarsa')
+            ->once()
+            ->with('REF001')
+            ->andReturn($prakarsa);
+
+        $this->externalService->shouldReceive('send')
+            ->once()
+            ->andReturn(true);
+
+        // ACT
+        $service = $this->makeService();
+        $result = $service->doSomething('REF001');
+
+        // ASSERT
+        $this->assertTrue($result);
+    }
+
+    /**
+     * @covers ::doSomething
+     */
+    public function testDoSomethingThrowExceptionWhenNotFound()
+    {
+        // ARRANGE
+        $this->expectException(DataNotFoundException::class);
+        
+        $this->prakarsaRepo->shouldReceive('getPrakarsa')
+            ->once()
+            ->andReturn(null);
+
+        // ACT
+        $service = $this->makeService();
+        $service->doSomething('INVALID_REF');
+
+        // ASSERT is implicit via expectException
+    }
+}
+```
+
+---
+
+**Referensi File**: `tests/Usecases/KreditPembiayaanPerumahanUsecaseTest.php`
+
+Last Updated: 2026-04-24
